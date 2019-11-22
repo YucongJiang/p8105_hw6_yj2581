@@ -1,0 +1,22 @@
+---
+title: "p8105_hw6_yj2581"
+author: "YucongJiang"
+date: "2019-11-21"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(mgcv)
+```
+
+## Problem 1
+
+```{r}
+```
+
+## Problem 2
+
+```{r}
+```
