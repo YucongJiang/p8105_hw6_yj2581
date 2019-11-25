@@ -15,16 +15,19 @@ library(modelr)
 First we build a model with all the covariates.
 
 ```{r load, message = FALSE, warning = FALSE}
+#load and clean data
 birthweight <- read_csv("data/birthweight.csv") %>%
   janitor::clean_names() %>%
   drop_na() %>%
   mutate(
+    #factorize
     babysex = factor(babysex),
     frace = factor(frace),
     mrace = factor(mrace),
     malform = factor(malform)
   )
 
+#build full model
 model_all <- lm(bwt ~ ., data = birthweight)
 summary(model_all)
 ```
@@ -39,6 +42,7 @@ model_1 <- step(model_all, direction = "backward")
 ```{r plot}
 summary(model_1)
 
+#draw the plot
 birthweight %>%
   add_predictions(model_1) %>%
   add_residuals(model_1) %>%
@@ -54,6 +58,7 @@ The R-squared is about 0.72. We can see that the fitted line of residuals agains
 Then we build another two model.
 
 ```{r model_2_3}
+#cross validation
 cv_df <- birthweight %>%
   crossv_mc(n = 100) %>%
   mutate(
@@ -71,6 +76,7 @@ cv_df <- birthweight %>%
     rmse_3 = map2_dbl(model_3, test, ~rmse(model = .x, data = .y))
   )
 
+#violin plot
 cv_df %>% 
   select(starts_with("rmse")) %>% 
   pivot_longer(everything(),
@@ -87,7 +93,9 @@ Model 2 has the highest rmse.
 
 ## Problem 2
 
-```{r load_2}
+First read the data.
+
+```{r load_2, message = FALSE}
 weather_df = 
   rnoaa::meteo_pull_monitors(
     c("USW00094728"),
@@ -100,5 +108,59 @@ weather_df =
     tmax = tmax / 10) %>%
   select(name, id, everything())
 ```
+
+Then create bootstrap samples
+
+```{r bootstrap}
+boot_strap <- weather_df %>%
+  bootstrap(n = 5000) %>%
+  mutate(
+    models = map(strap, ~ lm(tmax ~ tmin, data = .))
+  )
+```
+
+Calculate the two value and show their distributions.
+
+```{r b0b1}
+boot_res <- boot_strap %>%
+  mutate(
+    results = map(models, broom::tidy)
+  ) %>%
+  select(results) %>% unnest(results)
+
+#Use filter to split beta_0 and beta_1, then join
+beta_0 <- boot_res %>%
+  filter(term == "(Intercept)") %>% select(estimate) %>% rename(beta_0 = estimate)
+beta_1 <- boot_res %>%
+  filter(term == "tmin") %>% select(estimate) %>% rename(beta_1 = estimate)
+
+beta_0_1 <- cbind(beta_0, beta_1) %>% 
+  mutate(
+    log_product = log(beta_0 * beta_1)
+  ) %>% select(log_product)
+
+ggplot(beta_0_1, aes(x = log_product)) + geom_density()
+```
+
+```{r r2}
+#Use broom::glance to extract r^2
+r_sqr <- boot_strap %>%
+  mutate(
+    glance = map(models, broom::glance)
+  ) %>%
+  select(glance) %>% unnest(glance) %>% select(r.squared)
+
+ggplot(r_sqr, aes(x = r.squared)) + geom_density()
+```
+
+From the two plot above, we can see that the distribution of both two values are close to normal.
+
+```{r CI}
+CI_beta <- quantile(pull(beta_0_1, log_product), c(0.025, 0.975))
+CI_r2 <- quantile(pull(r_sqr, r.squared), c(0.025, 0.975))
+```
+
+The 95% CI of `log(beta_0 * beta_1)` is (`r CI_beta[[1]]`, `r CI_beta[[2]]`);
+the 95% CI of `R^2` is (`r CI_r2[[1]]`, `r CI_r2[[2]]`).
 
 
