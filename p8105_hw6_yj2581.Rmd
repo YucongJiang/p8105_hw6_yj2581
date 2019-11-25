@@ -8,15 +8,97 @@ output: github_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(modelr)
-library(mgcv)
 ```
 
 ## Problem 1
 
-```{r}
+First we build a model with all the covariates.
+
+```{r load, message = FALSE, warning = FALSE}
+birthweight <- read_csv("data/birthweight.csv") %>%
+  janitor::clean_names() %>%
+  drop_na() %>%
+  mutate(
+    babysex = factor(babysex),
+    frace = factor(frace),
+    mrace = factor(mrace),
+    malform = factor(malform)
+  )
+
+model_all <- lm(bwt ~ ., data = birthweight)
+summary(model_all)
 ```
+
+We can see that some of the covariates have collinearities and some others are not significant. We use stepwise regression to eliminate covariates.
+
+```{r stepwise, results = FALSE}
+model_1 <- step(model_all, direction = "backward")
+```
+
+
+```{r plot}
+summary(model_1)
+
+birthweight %>%
+  add_predictions(model_1) %>%
+  add_residuals(model_1) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point()+
+  geom_smooth(method = "lm")
+```
+
+Therefore, we build a model from data driven process, which contains covariates including: 
+babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken
+The R-squared is about 0.72. We can see that the fitted line of residuals against predictions is 0, showing that the assumption of normality is acceptable.
+
+Then we build another two model.
+
+```{r model_2_3}
+cv_df <- birthweight %>%
+  crossv_mc(n = 100) %>%
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  ) %>%
+  mutate(
+    model_1 = map(train, ~lm(bwt ~ babysex + bhead + blength + delwt + fincome + gaweeks + mheight + mrace + parity + ppwt + smoken, data = .)),
+    model_2 = map(train, ~lm(bwt ~ blength + gaweeks, data = .)),
+    model_3 = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .))
+  ) %>%
+  mutate(
+    rmse_1 = map2_dbl(model_1, test, ~rmse(model = .x, data = .y)),
+    rmse_2 = map2_dbl(model_2, test, ~rmse(model = .x, data = .y)),
+    rmse_3 = map2_dbl(model_3, test, ~rmse(model = .x, data = .y))
+  )
+
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
+
+We can see that our model "1" has the least rmse, which means that it has the least expected error when predicting the birthweight, compared with the other two models.
+
+Model 2 has the highest rmse.
 
 ## Problem 2
 
-```{r}
+```{r load_2}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
 ```
+
+
